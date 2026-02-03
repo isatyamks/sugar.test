@@ -60,8 +60,8 @@ class HelloWorldActivity(activity.Activity):
         toolbar_box.show()
 
         # label with the text, make the string translatable
-        label = Gtk.Label(_("testing the sugar activity env !"))
         
-        self.set_canvas(label)
         for i in range(10):
+            label = Gtk.Label(_(f"{i}testing the sugar activity env !"))
+            self.set_canvas(label)
             label.show()
