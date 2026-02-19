@@ -207,13 +207,18 @@ class HelloWorldActivity(activity.Activity):
         """
         try:
             bundle_id = self.get_bundle_id()
+            logging.debug("Fetching history for bundle_id: %s", bundle_id)
+            
             if not bundle_id:
+                logging.warning("No bundle_id found, cannot fetch history.")
                 return []
                 
             # Query datastore for other entries of this activity
             query = {'activity': bundle_id}
-            # Find returns (results, count)
-            results, count = datastore.find(query, properties=['title', 'description', 'timestamp'])
+            
+            # Find returns (results, count). 
+            # We MUST include 'uid' because Sugar's datastore wrapper might expect it.
+            results, count = datastore.find(query, properties=['uid', 'title', 'description', 'timestamp'])
             
             # Sort by timestamp descending
             results.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
