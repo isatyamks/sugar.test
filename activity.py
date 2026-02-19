@@ -30,6 +30,7 @@ from sugar3.graphics.toolbarbox import ToolbarBox
 from sugar3.activity.widgets import StopButton
 from sugar3.activity.widgets import ActivityToolbarButton
 from sugar3.graphics import style
+from sugar3.datastore import datastore
 
 # --- AI Reflection Components ---
 
@@ -41,17 +42,28 @@ class ReflectionService(object):
     def __init__(self):
         pass
 
-    def get_reflection_prompt(self, callback):
+    def get_reflection_prompt(self, context, callback):
         """
-        Mock function to get a reflection prompt from AI.
+        Mock function to get a reflection prompt from AI based on context.
         """
-        logging.debug('ReflectionService: Requesting prompt...')
+        logging.debug('ReflectionService: Requesting prompt with context: %s', context)
         # Simulate network delay
-        GLib.timeout_add_seconds(1, self._mock_api_response, callback)
+        GLib.timeout_add_seconds(1, self._mock_api_response, context, callback)
 
-    def _mock_api_response(self, callback):
-        # Default prompt for testing
-        prompt = "You've been working hard! What is one thing you learned while using this activity today?"
+    def _mock_api_response(self, context, callback):
+        # Generate a context-aware prompt
+        history = context.get('history', [])
+        current_state = context.get('current_state', '')
+        
+        if len(history) > 1:
+            last_entry = history[1] # 0 is likely the current one being saved or the most recent
+            prompt = "I see you worked on '{}' previously. How is your work today different from what you did on {}?".format(
+                last_entry.get('title', 'this activity'),
+                last_entry.get('time', 'before')
+            )
+        else:
+            prompt = "This looks like a new project! what are you planning to make?"
+            
         logging.debug('ReflectionService: Generated prompt: %s', prompt)
         callback(prompt)
         return False
@@ -176,10 +188,54 @@ class HelloWorldActivity(activity.Activity):
             return
 
         logging.debug("HelloWorldActivity: Intercepting close for reflection.")
-        # Trigger reflection process
-        self._reflection_service.get_reflection_prompt(self._show_reflection_ui)
-        # return without calling super().close() to keep window open
+        
+        # Gather Context
+        history = self._fetch_history()
+        current_state = "Activity stopped by user at {}".format(time.ctime())
+        context = {
+            'history': history,
+            'current_state': current_state
+        }
+        
+        # Trigger reflection process with context
+        self._reflection_service.get_reflection_prompt(context, self._show_reflection_ui)
         return
+
+    def _fetch_history(self):
+        """
+        Fetches previous journal entries for this activity type.
+        """
+        try:
+            bundle_id = self.get_bundle_id()
+            if not bundle_id:
+                return []
+                
+            # Query datastore for other entries of this activity
+            query = {'activity': bundle_id}
+            # Find returns (results, count)
+            results, count = datastore.find(query, properties=['title', 'description', 'timestamp'])
+            
+            # Sort by timestamp descending
+            results.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+            
+            history_summary = []
+            # Results are DBus.Dictionary objects, convert to plain dict for simplicity
+            for entry in results[:5]: # Last 5 entries
+                summary = {
+                    'title': str(entry.get('title', 'Untitled')),
+                    'description': str(entry.get('description', '')),
+                    'timestamp': float(entry.get('timestamp', 0)),
+                    'time': time.ctime(float(entry.get('timestamp', 0)))
+                }
+                history_summary.append(summary)
+            
+            logging.debug("Fetched %d history items for %s", len(history_summary), bundle_id)
+            return history_summary
+            
+        except Exception as e:
+            logging.error("Error fetching activity history: %s", e)
+            return []
+
 
     def _show_reflection_ui(self, prompt):
         dialog = ReflectionDialog(self, prompt, self._on_reflection_response)
